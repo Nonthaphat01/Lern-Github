@@ -5,6 +5,9 @@ const cors = require('cors');
 
 const app = express();
 app.use(cors()); // อนุญาตให้ตัวเกม(HTML) เชื่อมต่อข้ามโดเมนได้
+app.get('/', (req, res) => {
+    res.send('<h1 style="color:green; font-family:sans-serif; text-align:center; margin-top:50px;">✅ Zombie Server is Online and Ready!</h1>');
+});
 
 const server = http.createServer(app);
 const io = new Server(server, {
