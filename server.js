@@ -15,32 +15,26 @@ const io = new Server(server, {
     cors: { origin: "*", methods: ["GET", "POST"] }
 });
 
-// เก็บข้อมูลห้องทั้งหมด
 const rooms = {}; 
 
 io.on('connection', (socket) => {
     console.log('Player connected:', socket.id);
 
-    // เมื่อผู้เล่นเข้าห้อง
     socket.on('joinRoom', (data) => {
         const roomName = data.roomName;
         const playerName = data.playerName;
         
         socket.join(roomName);
         
-        // ถ้าห้องยังไม่มี ให้สร้างใหม่และตั้งคนแรกเป็น Host
         if (!rooms[roomName]) {
             rooms[roomName] = { host: socket.id, state: 'waiting', players: {} };
         }
         
-        // เพิ่มผู้เล่นเข้าห้อง
         rooms[roomName].players[socket.id] = { name: playerName, id: socket.id };
         
         if (rooms[roomName].state === 'playing') {
-            // ถ้าเกมเริ่มไปแล้ว ให้คนที่เข้ามาทีหลังเข้าเกมเลย
-            socket.emit('gameStarted');
+            socket.emit('gameStarted', { host: rooms[roomName].host });
         } else {
-            // ถ้ายังไม่เริ่ม ให้อัปเดตหน้าล็อบบี้ส่งให้ทุกคนในห้องเห็น
             io.to(roomName).emit('roomUpdated', {
                 host: rooms[roomName].host,
                 players: Object.values(rooms[roomName].players)
@@ -48,15 +42,13 @@ io.on('connection', (socket) => {
         }
     });
 
-    // เมื่อ Host กดเริ่มเกม
     socket.on('startGame', (roomName) => {
         if (rooms[roomName] && rooms[roomName].host === socket.id) {
             rooms[roomName].state = 'playing';
-            io.to(roomName).emit('gameStarted'); // ส่งคำสั่งเริ่มเกมให้ทุกคน
+            io.to(roomName).emit('gameStarted', { host: rooms[roomName].host });
         }
     });
 
-    // รับข้อมูลตำแหน่ง/การยิง แล้วส่งให้คนอื่นในห้อง
     socket.on('updatePlayer', (data) => {
         const roomName = data.room;
         if (rooms[roomName] && rooms[roomName].state === 'playing') {
@@ -64,18 +56,31 @@ io.on('connection', (socket) => {
         }
     });
 
-    // เมื่อผู้เล่นหลุด/ออกเกม
+    // 🌟 ส่งพิกัดซอมบี้และกระสุนบอส จาก Host ไปให้ทุกคนในห้อง 🌟
+    socket.on('syncZombies', (data) => {
+        if (rooms[data.room] && rooms[data.room].host === socket.id) {
+            socket.to(data.room).emit('syncZombies', { zombies: data.zombies, enemyBullets: data.enemyBullets });
+        }
+    });
+
+    // 🌟 เมื่อลูกห้องยิงซอมบี้โดน ให้ส่งคำสั่งไปบอก Host ให้ลดเลือดซอมบี้ 🌟
+    socket.on('damageZombie', (data) => {
+        if (rooms[data.room]) {
+            io.to(rooms[data.room].host).emit('zombieDamaged', data);
+        }
+    });
+
     socket.on('disconnect', () => {
         for (const roomName in rooms) {
             if (rooms[roomName].players[socket.id]) {
                 delete rooms[roomName].players[socket.id];
                 
                 if (Object.keys(rooms[roomName].players).length === 0) {
-                    delete rooms[roomName]; // ถ้าห้องว่างให้ลบทิ้ง
+                    delete rooms[roomName]; 
                 } else {
-                    // ถ้าคนที่ออกเป็น Host ให้โยนตำแหน่ง Host ให้คนถัดไป
                     if (rooms[roomName].host === socket.id) {
                         rooms[roomName].host = Object.keys(rooms[roomName].players)[0];
+                        io.to(roomName).emit('hostChanged', rooms[roomName].host);
                     }
                     
                     if (rooms[roomName].state === 'waiting') {
