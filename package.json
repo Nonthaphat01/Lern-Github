@@ -1,1 +1,1 @@
-
+"name": "zombie-server"
