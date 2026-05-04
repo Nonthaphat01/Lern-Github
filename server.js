@@ -4,57 +4,95 @@ const { Server } = require('socket.io');
 const cors = require('cors');
 
 const app = express();
-app.use(cors()); // อนุญาตให้ตัวเกม(HTML) เชื่อมต่อข้ามโดเมนได้
+app.use(cors());
+
 app.get('/', (req, res) => {
     res.send('<h1 style="color:green; font-family:sans-serif; text-align:center; margin-top:50px;">✅ Zombie Server is Online and Ready!</h1>');
 });
 
 const server = http.createServer(app);
 const io = new Server(server, {
-    cors: {
-        origin: "*", // ยอมรับการเชื่อมต่อจากทุกที่
-        methods: ["GET", "POST"]
-    }
+    cors: { origin: "*", methods: ["GET", "POST"] }
 });
 
-// เก็บข้อมูลผู้เล่นทั้งหมด
-const players = {};
+// เก็บข้อมูลห้องทั้งหมด
+const rooms = {}; 
 
 io.on('connection', (socket) => {
-    console.log('🔥 Player connected:', socket.id);
+    console.log('Player connected:', socket.id);
 
     // เมื่อผู้เล่นเข้าห้อง
-    socket.on('joinRoom', (roomName) => {
+    socket.on('joinRoom', (data) => {
+        const roomName = data.roomName;
+        const playerName = data.playerName;
+        
         socket.join(roomName);
-        players[socket.id] = { room: roomName };
-        console.log(`👉 Player ${socket.id} joined room: ${roomName}`);
-    });
-
-    // เมื่อผู้เล่นขยับตัว หรืออัปเดตเลือด/อาวุธ
-    socket.on('updatePlayer', (data) => {
-        if (players[socket.id]) {
-            players[socket.id] = { ...players[socket.id], ...data };
-            // ส่งข้อมูลนี้ไปให้ "คนอื่นๆ" ในห้องเดียวกัน (Real-time!)
-            socket.to(players[socket.id].room).emit('updateOthers', {
-                id: socket.id, // ใช้รหัส socket เป็น ID แทนชื่อ
-                ...data
+        
+        // ถ้าห้องยังไม่มี ให้สร้างใหม่และตั้งคนแรกเป็น Host
+        if (!rooms[roomName]) {
+            rooms[roomName] = { host: socket.id, state: 'waiting', players: {} };
+        }
+        
+        // เพิ่มผู้เล่นเข้าห้อง
+        rooms[roomName].players[socket.id] = { name: playerName, id: socket.id };
+        
+        if (rooms[roomName].state === 'playing') {
+            // ถ้าเกมเริ่มไปแล้ว ให้คนที่เข้ามาทีหลังเข้าเกมเลย
+            socket.emit('gameStarted');
+        } else {
+            // ถ้ายังไม่เริ่ม ให้อัปเดตหน้าล็อบบี้ส่งให้ทุกคนในห้องเห็น
+            io.to(roomName).emit('roomUpdated', {
+                host: rooms[roomName].host,
+                players: Object.values(rooms[roomName].players)
             });
         }
     });
 
-    // เมื่อผู้เล่นหลุด/ปิดเกม
+    // เมื่อ Host กดเริ่มเกม
+    socket.on('startGame', (roomName) => {
+        if (rooms[roomName] && rooms[roomName].host === socket.id) {
+            rooms[roomName].state = 'playing';
+            io.to(roomName).emit('gameStarted'); // ส่งคำสั่งเริ่มเกมให้ทุกคน
+        }
+    });
+
+    // รับข้อมูลตำแหน่ง/การยิง แล้วส่งให้คนอื่นในห้อง
+    socket.on('updatePlayer', (data) => {
+        const roomName = data.room;
+        if (rooms[roomName] && rooms[roomName].state === 'playing') {
+            socket.to(roomName).emit('updateOthers', { id: socket.id, ...data });
+        }
+    });
+
+    // เมื่อผู้เล่นหลุด/ออกเกม
     socket.on('disconnect', () => {
-        console.log('❌ Player disconnected:', socket.id);
-        if (players[socket.id]) {
-            const room = players[socket.id].room;
-            delete players[socket.id];
-            // บอกคนอื่นในห้องว่าลบตัวละครนี้ทิ้งซะ
-            io.to(room).emit('playerDisconnected', socket.id);
+        for (const roomName in rooms) {
+            if (rooms[roomName].players[socket.id]) {
+                delete rooms[roomName].players[socket.id];
+                
+                if (Object.keys(rooms[roomName].players).length === 0) {
+                    delete rooms[roomName]; // ถ้าห้องว่างให้ลบทิ้ง
+                } else {
+                    // ถ้าคนที่ออกเป็น Host ให้โยนตำแหน่ง Host ให้คนถัดไป
+                    if (rooms[roomName].host === socket.id) {
+                        rooms[roomName].host = Object.keys(rooms[roomName].players)[0];
+                    }
+                    
+                    if (rooms[roomName].state === 'waiting') {
+                        io.to(roomName).emit('roomUpdated', {
+                            host: rooms[roomName].host,
+                            players: Object.values(rooms[roomName].players)
+                        });
+                    }
+                    io.to(roomName).emit('playerDisconnected', socket.id);
+                }
+                break;
+            }
         }
     });
 });
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-    console.log(`🚀 Server is running on port ${PORT}`);
+    console.log(`Server is running on port ${PORT}`);
 });
