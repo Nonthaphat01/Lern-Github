@@ -17,7 +17,6 @@ const io = new Server(server, {
 
 const rooms = {};
 
-// 🌟 ระบบสุ่มสล็อตความเร็วแสง (Fast RNG Engine) 🌟
 const mjSyms = ['🀄', '🀙', '🀚', '🀐', '🀇', '🀫', '🀅', '🀆'];
 const mwSyms = ['s1','s2','s3','s4','s5','s6','s7'];
 
@@ -25,7 +24,7 @@ io.on('connection', (socket) => {
     console.log('Player connected:', socket.id);
 
     // ==========================================
-    // 🧟 ระบบเกมซอมบี้ (ของเดิม)
+    // 🧟 ระบบเกมซอมบี้
     // ==========================================
     socket.on('joinRoom', (data) => {
         const roomName = data.roomName;
@@ -64,61 +63,149 @@ io.on('connection', (socket) => {
     });
 
     // ==========================================
-    // 🀄 ระบบสล็อต MAHJONG (สุ่มจากฝั่ง Server ทันที)
+    // 🀄 ระบบสล็อต MAHJONG (PG Soft Style)
     // ==========================================
     socket.on('spinMahjong', (data) => {
         let bet = data.bet;
-        let isWin = Math.random() < 0.45; // โอกาสชนะ 45% (ปรับได้)
-        let cascades = isWin ? Math.floor(Math.random() * 3) + 1 : 0;
+        let isFS = data.isFS || false;
+        
+        let isWin = Math.random() < (isFS ? 0.60 : 0.35); 
+        let targetCascades = isWin ? Math.floor(Math.random() * 4) + 1 : 0;
         
         let mjCols = [4, 5, 5, 5, 4];
-        let mults = [1, 2, 3, 5];
+        let mults = isFS ? [2, 4, 6, 10] : [1, 2, 3, 5]; 
         let steps = [];
         let totalPayout = 0;
         let currentMultIdx = 0;
-        let currentGrid = [];
+        
+        let scCount = 0;
+        let scChance = isFS ? 0 : 0.03; 
 
-        // จำลองกระดานเริ่มต้น
+        // 1. จำลองกระดานเริ่มต้น
+        let currentGrid = [];
         for (let c = 0; c < 5; c++) {
             let col = [];
             for (let r = 0; r < mjCols[c]; r++) {
-                col.push({ sym: mjSyms[Math.floor(Math.random() * mjSyms.length)], gold: ((c==1||c==3) && Math.random()<0.25) });
+                let isGoldZone = (c >= 1 && c <= 3); 
+                let sym = mjSyms[Math.floor(Math.random() * mjSyms.length)];
+                if (!isFS && Math.random() < scChance && scCount < 4) { sym = '🧧'; scCount++; }
+                col.push({ sym: sym, gold: (isGoldZone && Math.random() < 0.35 && sym !== '🧧'), wild: false });
             }
             currentGrid.push(col);
         }
 
-        for(let stepCount = 0; stepCount <= cascades; stepCount++) {
+        // แจ็คพอตสแกตเตอร์ (หรือถ้ากดซื้อฟรีสปิน)
+        if (!isFS && (Math.random() < 0.015 || data.buyFS)) {
+            scCount = 3;
+            currentGrid[0][0] = {sym: '🧧', gold: false, wild: false};
+            currentGrid[2][0] = {sym: '🧧', gold: false, wild: false};
+            currentGrid[4][0] = {sym: '🧧', gold: false, wild: false};
+        }
+
+        let currentCascade = 0;
+        while(currentCascade <= targetCascades) {
             let stepObj = { grid: JSON.parse(JSON.stringify(currentGrid)), payout: 0, mult: mults[currentMultIdx] };
-            if (stepCount < cascades) {
-                let winPayout = Math.floor(bet * (Math.random() * 1.5 + 0.5) * stepObj.mult);
-                stepObj.payout = winPayout;
-                totalPayout += winPayout;
-                for(let c=0; c<=2; c++) stepObj.grid[c][0].explode = true; // จำลองช่องระเบิด
+            
+            if (currentCascade < targetCascades) {
+                // สร้างจังหวะชนะให้ตรงเส้นไลน์
+                let winSym = mjSyms[Math.floor(Math.random() * mjSyms.length)];
+                let winLen = Math.random() < 0.2 ? 5 : (Math.random() < 0.5 ? 4 : 3);
+                for(let c=0; c<winLen; c++) {
+                    let r = Math.floor(Math.random() * mjCols[c]);
+                    stepObj.grid[c][r].sym = winSym;
+                    if (stepObj.grid[c][r].wild) stepObj.grid[c][r].wild = false;
+                }
+            }
+
+            // Engine เช็คผลชนะจริงๆ จากตาราง (สมจริง 100%)
+            let winningCells = Array(5).fill(0).map((_, i) => Array(mjCols[i]).fill(false));
+            let stepPayout = 0;
+            let hasWin = false;
+
+            mjSyms.forEach(sym => {
+                let m = 0; let ways = 1; let winReels = [];
+                for(let c = 0; c < 5; c++) {
+                    let countInCol = 0; let matchedIndices = [];
+                    for(let r = 0; r < mjCols[c]; r++) {
+                        let cellSym = stepObj.grid[c][r].sym;
+                        if(cellSym === sym || cellSym === 'WILD' || stepObj.grid[c][r].wild) {
+                            countInCol++; matchedIndices.push(r);
+                        }
+                    }
+                    if(countInCol > 0) { m++; ways *= countInCol; winReels.push(matchedIndices); } 
+                    else { break; }
+                }
+                if (m >= 3) {
+                    hasWin = true;
+                    let pt = {3: 0.5, 4: 1, 5: 2};
+                    let baseWin = pt[m] * bet;
+                    stepPayout += baseWin * ways * mults[currentMultIdx];
+                    for(let c = 0; c < m; c++) {
+                        winReels[c].forEach(r => { winningCells[c][r] = true; });
+                    }
+                }
+            });
+
+            if (hasWin && currentCascade < targetCascades) {
+                stepObj.payout = Math.floor(stepPayout) || Math.floor(bet * 0.5);
+                totalPayout += stepObj.payout;
+                
+                let explodedAny = false;
+                for(let c = 0; c < 5; c++) {
+                    for(let r = 0; r < mjCols[c]; r++) {
+                        // ระเบิดเฉพาะช่องที่ชนะ และไม่ใช่ Scatter
+                        if(winningCells[c][r] && stepObj.grid[c][r].sym !== '🧧') {
+                            stepObj.grid[c][r].explode = true;
+                            explodedAny = true;
+                        }
+                    }
+                }
+                
+                // กันเหนียว
+                if (!explodedAny) { stepObj.grid[0][0].explode = true; stepObj.grid[1][0].explode = true; stepObj.grid[2][0].explode = true; }
+                
                 steps.push(stepObj);
 
+                // สร้างกระดานใหม่ของร่วงมาแทนที่ (ฟิสิกส์การร่วง)
                 let nextGrid = [];
                 for(let c=0; c<5; c++) {
                     let newCol = []; let explodeCount = 0;
                     for(let r=0; r<mjCols[c]; r++) {
                         let cell = stepObj.grid[c][r];
                         if(cell.explode) {
-                            if(cell.gold) newCol.push({sym: '💰', gold: false, wild: true, isNew: false});
-                            else explodeCount++;
+                            if(cell.gold) {
+                                newCol.push({sym: 'WILD', gold: false, wild: true, isNew: false}); // กรอบทองกลายเป็น Wild
+                            } else {
+                                explodeCount++;
+                            }
                         } else {
                             newCol.push({sym: cell.sym, gold: cell.gold, wild: cell.wild, isNew: false});
                         }
                     }
-                    for(let i=0; i<explodeCount; i++) newCol.unshift({sym: mjSyms[Math.floor(Math.random() * mjSyms.length)], gold: ((c==1||c==3) && Math.random()<0.25), wild: false, isNew: true});
+                    
+                    let isGoldZone = (c >= 1 && c <= 3);
+                    for(let i=0; i<explodeCount; i++) {
+                        newCol.unshift({
+                            sym: mjSyms[Math.floor(Math.random() * mjSyms.length)], 
+                            gold: (isGoldZone && Math.random() < 0.35), 
+                            wild: false, 
+                            isNew: true
+                        });
+                    }
                     nextGrid.push(newCol);
                 }
                 currentGrid = nextGrid;
                 if(currentMultIdx < 3) currentMultIdx++;
+                currentCascade++;
             } else {
-                stepObj.payout = 0; steps.push(stepObj);
+                stepObj.payout = 0;
+                for(let c=0;c<5;c++) for(let r=0;r<mjCols[c];r++) stepObj.grid[c][r].explode = false;
+                steps.push(stepObj);
+                break;
             }
         }
-        // ส่งผลลัพธ์กลับไปที่หน้าเว็บทันที (ใช้เวลาไม่ถึง 0.05 วินาที)
-        socket.emit('mahjongResult', { success: true, steps: steps, totalPayout: totalPayout });
+        
+        socket.emit('mahjongResult', { success: true, steps: steps, totalPayout: totalPayout, isFreeSpin: (scCount >= 3) });
     });
 
     // ==========================================
@@ -129,7 +216,7 @@ io.on('connection', (socket) => {
         let isFS = data.isFS;
         let accMult = data.accMult;
         
-        let isWin = Math.random() < 0.40; // โอกาสชนะ
+        let isWin = Math.random() < 0.40; 
         let scChance = isFS ? 0 : 0.03; 
         
         let reels = []; let scCount = 0; let ways = 1;
@@ -146,7 +233,7 @@ io.on('connection', (socket) => {
 
         if (isWin) {
             let winSym = mwSyms[Math.floor(Math.random()*mwSyms.length)];
-            let len = Math.floor(Math.random() * 3) + 3; // แตก 3-5 แถว
+            let len = Math.floor(Math.random() * 3) + 3; 
             for (let c=0; c<len; c++) reels[c][0] = winSym;
         }
 
@@ -172,7 +259,7 @@ io.on('connection', (socket) => {
     });
 
     socket.on('disconnect', () => {
-        // ... (โค้ดลบห้องเดิมของซอมบี้ ปล่อยไว้เหมือนเดิมได้เลยครับ)
+        // ... โค้ดเดิม
     });
 });
 
