@@ -20,6 +20,10 @@ const rooms = {};
 const mjSyms = ['🀄', '🀙', '🀚', '🀐', '🀇', '🀫', '🀅', '🀆'];
 const mwSyms = ['s1','s2','s3','s4','s5','s6','s7'];
 
+// Plinko Data
+const plMults = [110, 41, 10, 5, 3, 1.5, 1, 0.5, 0.5, 1, 1.5, 3, 5, 10, 41, 110]; 
+const plChances = [0.05, 0.1, 0.2, 0.5, 1.5, 4, 10, 33.65, 33.65, 10, 4, 1.5, 0.5, 0.2, 0.1, 0.05];
+
 io.on('connection', (socket) => {
     console.log('Player connected:', socket.id);
 
@@ -31,42 +35,31 @@ io.on('connection', (socket) => {
         socket.join(roomName);
         if (!rooms[roomName]) rooms[roomName] = { host: socket.id, state: 'waiting', players: {} };
         rooms[roomName].players[socket.id] = { name: data.playerName, id: socket.id };
-        
-        if (rooms[roomName].state === 'playing') {
-            socket.emit('gameStarted', { host: rooms[roomName].host });
-        } else {
-            io.to(roomName).emit('roomUpdated', { host: rooms[roomName].host, players: Object.values(rooms[roomName].players) });
-        }
+        if (rooms[roomName].state === 'playing') socket.emit('gameStarted', { host: rooms[roomName].host });
+        else io.to(roomName).emit('roomUpdated', { host: rooms[roomName].host, players: Object.values(rooms[roomName].players) });
     });
 
     socket.on('startGame', (roomName) => {
         if (rooms[roomName] && rooms[roomName].host === socket.id) {
-            rooms[roomName].state = 'playing';
-            io.to(roomName).emit('gameStarted', { host: rooms[roomName].host });
+            rooms[roomName].state = 'playing'; io.to(roomName).emit('gameStarted', { host: rooms[roomName].host });
         }
     });
 
     socket.on('updatePlayer', (data) => {
-        if (rooms[data.room] && rooms[data.room].state === 'playing') {
-            socket.to(data.room).emit('updateOthers', { id: socket.id, ...data });
-        }
+        if (rooms[data.room] && rooms[data.room].state === 'playing') socket.to(data.room).emit('updateOthers', { id: socket.id, ...data });
     });
 
     socket.on('syncZombies', (data) => {
-        if (rooms[data.room] && rooms[data.room].host === socket.id) {
-            socket.to(data.room).emit('syncZombies', { zombies: data.zombies, enemyBullets: data.enemyBullets });
-        }
+        if (rooms[data.room] && rooms[data.room].host === socket.id) socket.to(data.room).emit('syncZombies', { zombies: data.zombies, enemyBullets: data.enemyBullets });
     });
 
     socket.on('damageZombie', (data) => {
         if (rooms[data.room]) io.to(rooms[data.room].host).emit('zombieDamaged', data);
     });
 
-// ==========================================
-    // 🀄 ระบบสล็อต MAHJONG (แก้ไขระบบ Cascade สมจริง 100%)
     // ==========================================
-    const mjSyms = ['🀄', '🀙', '🀚', '🀐', '🀇', '🀫', '🀅', '🀆'];
-    
+    // 🀄 ระบบสล็อต MAHJONG (PG Soft Style - สมจริง 100%)
+    // ==========================================
     socket.on('spinMahjong', (data) => {
         let bet = data.bet;
         let isFS = data.isFS || false;
@@ -83,7 +76,6 @@ io.on('connection', (socket) => {
         let scCount = 0;
         let scChance = isFS ? 0 : 0.03; 
 
-        // 1. สร้างตารางเริ่มต้น
         let currentGrid = [];
         for (let c = 0; c < 5; c++) {
             let col = [];
@@ -91,7 +83,6 @@ io.on('connection', (socket) => {
                 let isGoldZone = (c >= 1 && c <= 3); 
                 let sym = mjSyms[Math.floor(Math.random() * mjSyms.length)];
                 if (!isFS && Math.random() < scChance && scCount < 4) { sym = '🧧'; scCount++; }
-                // isNew = ลงมาจากฟ้า
                 col.push({ sym: sym, gold: (isGoldZone && Math.random() < 0.35 && sym !== '🧧'), wild: false, isNew: true, isFall: false });
             }
             currentGrid.push(col);
@@ -118,14 +109,12 @@ io.on('connection', (socket) => {
                 }
             }
 
-            // 🌟 STEP A: จังหวะของร่วงหล่นลงมาแตะพื้น (รอให้คนดูเห็นภาพก่อน)
             let dropStep = { grid: JSON.parse(JSON.stringify(currentGrid)), payout: 0, mult: mults[currentMultIdx], action: 'drop' };
 
             let winningCells = Array(5).fill(0).map((_, i) => Array(mjCols[i]).fill(false));
             let stepPayout = 0;
             let hasWin = false;
 
-            // ค้นหาไลน์จ่ายเงิน
             mjSyms.forEach(sym => {
                 if (sym === '🧧') return; 
                 let m = 0; let ways = 1; let winReels = [];
@@ -152,9 +141,8 @@ io.on('connection', (socket) => {
             });
 
             if (hasWin) {
-                steps.push(dropStep); // ปล่อยภาพร่วงลงมาโชว์ก่อน
+                steps.push(dropStep); 
 
-                // 🌟 STEP B: จังหวะระเบิดและจ่ายเงิน
                 let explodeStep = { grid: JSON.parse(JSON.stringify(dropStep.grid)), payout: Math.floor(stepPayout) || Math.floor(bet * 0.5), mult: mults[currentMultIdx], action: 'explode' };
                 totalPayout += explodeStep.payout;
                 
@@ -165,13 +153,11 @@ io.on('connection', (socket) => {
                 }
                 steps.push(explodeStep);
 
-                // คำนวณตารางใหม่แบบฟิสิกส์PG
                 let nextGrid = [];
                 for(let c=0; c<5; c++) {
                     let newCol = []; 
                     let explodeCount = 0;
                     
-                    // หาตัวที่รอดจากการระเบิด
                     let survivors = [];
                     for(let r=0; r<mjCols[c]; r++) {
                         let cell = explodeStep.grid[c][r];
@@ -184,7 +170,6 @@ io.on('connection', (socket) => {
                     }
                     
                     let isGoldZone = (c >= 1 && c <= 3);
-                    // ตัวใหม่ลงจากฟ้า
                     for(let i=0; i<explodeCount; i++) {
                         newCol.push({
                             sym: mjSyms[Math.floor(Math.random() * mjSyms.length)], 
@@ -193,7 +178,6 @@ io.on('connection', (socket) => {
                         });
                     }
                     
-                    // ตัวเก่าที่รอดชีวิต ถ้าตำแหน่งเดิมเปลี่ยน = isFall (หล่นลงมาทับที่ว่าง)
                     for(let i=0; i<survivors.length; i++) {
                         let newR = explodeCount + i;
                         let oldR = survivors[i].oldR;
@@ -209,7 +193,7 @@ io.on('connection', (socket) => {
                 if(currentMultIdx < 3) currentMultIdx++;
                 currentCascade++;
             } else {
-                steps.push(dropStep); // ไม่มีเงิน จบที่ภาพร่วงลงมาปกติ
+                steps.push(dropStep);
                 break;
             }
         }
@@ -267,8 +251,33 @@ io.on('connection', (socket) => {
         });
     });
 
+    // ==========================================
+    // 🟢 ระบบ PLINKO
+    // ==========================================
+    socket.on('dropPlinko', (data) => {
+        let count = data.count;
+        let bet = data.bet;
+        let results = [];
+        let totalPayout = 0;
+
+        for(let i=0; i<count; i++) {
+            let sum = plChances.reduce((a, b) => a + b, 0); 
+            let r = Math.random() * sum; 
+            let bin = 0; let current = 0; 
+            for (let j = 0; j < 16; j++) { 
+                current += plChances[j]; 
+                if (r <= current) { bin = j; break; } 
+            } 
+            let payout = bet * plMults[bin]; 
+            totalPayout += payout; 
+            results.push({ bin: bin, multiplier: plMults[bin], payout: payout }); 
+        }
+
+        socket.emit('plinkoResult', { success: true, results: results, totalPayout: totalPayout });
+    });
+
     socket.on('disconnect', () => {
-        // ... โค้ดเดิม
+        console.log('Player disconnected:', socket.id);
     });
 });
 
