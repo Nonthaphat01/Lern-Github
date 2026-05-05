@@ -63,17 +63,13 @@ io.on('connection', (socket) => {
     });
 
 // ==========================================
-    // 🀄 ระบบสล็อต MAHJONG (PG Soft Style - อัปเดตแก้บั๊กไลน์จ่าย 100%)
+    // 🀄 ระบบสล็อต MAHJONG (แก้ไขระบบ Cascade หล่นปุ๊บแตกปั๊บ 100%)
     // ==========================================
     const mjSyms = ['🀄', '🀙', '🀚', '🀐', '🀇', '🀫', '🀅', '🀆'];
     
     socket.on('spinMahjong', (data) => {
         let bet = data.bet;
         let isFS = data.isFS || false;
-        
-        // โอกาสที่ระบบจะแอบช่วยเสกให้ชนะ
-        let isWin = Math.random() < (isFS ? 0.60 : 0.35); 
-        let forceWinTarget = isWin ? Math.floor(Math.random() * 4) + 1 : 0; 
         
         let mjCols = [4, 5, 5, 5, 4];
         let mults = isFS ? [2, 4, 6, 10] : [1, 2, 3, 5]; 
@@ -84,7 +80,7 @@ io.on('connection', (socket) => {
         let scCount = 0;
         let scChance = isFS ? 0 : 0.03; 
 
-        // 1. สร้างกระดานเริ่มต้นแบบสุ่มทั้งหมด
+        // 1. สร้างกระดานเริ่มต้นแบบสุ่ม
         let currentGrid = [];
         for (let c = 0; c < 5; c++) {
             let col = [];
@@ -97,7 +93,6 @@ io.on('connection', (socket) => {
             currentGrid.push(col);
         }
 
-        // แจ็คพอตเข้าฟรีสปิน (ถ้ากดซื้อ หรือฟลุ๊คเข้า)
         if (!isFS && (Math.random() < 0.015 || data.buyFS)) {
             scCount = 3;
             currentGrid[0][0] = {sym: '🧧', gold: false, wild: false};
@@ -105,14 +100,19 @@ io.on('connection', (socket) => {
             currentGrid[4][0] = {sym: '🧧', gold: false, wild: false};
         }
 
-        let currentCascade = 0;
-        while(true) { // 🌟 ไหลไปเรื่อยๆ จนกว่าภาพจะไม่ตรงกัน
+        // โอกาสที่ระบบจะบังคับให้ชนะในตาแรกสุด (เพื่อให้เกิดการแตก)
+        let isForceWin = Math.random() < (isFS ? 0.60 : 0.35);
+
+        let cascadeLimit = 15; // กันอนันต์
+        let cascadeCount = 0;
+
+        while(cascadeCount <= cascadeLimit) {
             let stepObj = { grid: JSON.parse(JSON.stringify(currentGrid)), payout: 0, mult: mults[currentMultIdx] };
             
-            // ถ้าระบบอยากจะช่วยให้ชนะในเทิร์นนี้ จะเสกสัญลักษณ์ให้ตรงกัน
-            if (currentCascade < forceWinTarget) {
+            // 🌟 2. ถ้าเป็นตาแรกสุด และระบบสุ่มว่าต้องชนะ จะบังคับเสกไลน์ให้
+            if (cascadeCount === 0 && isForceWin) {
                 let winSym = mjSyms[Math.floor(Math.random() * mjSyms.length)];
-                if(winSym === '🧧') winSym = mjSyms[0]; // ป้องกันเสกสแกตเตอร์
+                if(winSym === '🧧') winSym = mjSyms[0]; 
                 let winLen = Math.random() < 0.2 ? 5 : (Math.random() < 0.5 ? 4 : 3);
                 for(let c=0; c<winLen; c++) {
                     let r = Math.floor(Math.random() * mjCols[c]);
@@ -121,13 +121,13 @@ io.on('connection', (socket) => {
                 }
             }
 
-            // 🌟 2. คำนวณการชนะจากภาพที่เห็นตรงหน้า (ตรงกับที่ผู้เล่นเห็น 100%) 🌟
+            // 🌟 3. เช็คการชนะจากตารางที่เกิดขึ้นจริงๆ (ทั้งจากตาแรกที่เสก และตาหลังๆ ที่หล่นลงมาเอง) 🌟
             let winningCells = Array(5).fill(0).map((_, i) => Array(mjCols[i]).fill(false));
             let stepPayout = 0;
             let hasWin = false;
 
             mjSyms.forEach(sym => {
-                if (sym === '🧧') return; // สแกตเตอร์ไม่นับวิธีชนะปกติ
+                if (sym === '🧧') return; 
                 
                 let m = 0; let ways = 1; let winReels = [];
                 for(let c = 0; c < 5; c++) {
@@ -139,54 +139,57 @@ io.on('connection', (socket) => {
                         }
                     }
                     if(countInCol > 0) { m++; ways *= countInCol; winReels.push(matchedIndices); } 
-                    else { break; } // ขาดตอนเมื่อไหร่ ไลน์จ่ายหยุดทันที
+                    else { break; } 
                 }
                 
-                if (m >= 3) { // เรียง 3 คอลัมน์ขึ้นไปจากซ้ายถึงจะชนะ
+                if (m >= 3) { 
                     hasWin = true;
                     let pt = {3: 0.5, 4: 1, 5: 2};
                     let baseWin = pt[m] * bet;
-                    stepPayout += baseWin * ways * mults[currentMultIdx];
+                    stepPayout += baseWin * ways * stepObj.mult; // คูนรางวัลตามคอมโบ
                     for(let c = 0; c < m; c++) {
                         winReels[c].forEach(r => { winningCells[c][r] = true; });
                     }
                 }
             });
 
-            // 🌟 ถ้าตารางมีไลน์ชนะ (ไม่ว่าจะฟลุ๊คตกมาตรงเอง หรือระบบช่วย) ต้องจ่ายเงินเสมอ! 🌟
+            // 🌟 4. ถ้ามีช่องแตก (ไม่ว่าจะเป็นตาไหนก็ตาม) 🌟
             if (hasWin) {
                 stepObj.payout = Math.floor(stepPayout) || Math.floor(bet * 0.5);
                 totalPayout += stepObj.payout;
                 
-                let explodedAny = false;
+                // กำหนดสถานะระเบิดให้เซลล์ที่ชนะ
                 for(let c = 0; c < 5; c++) {
                     for(let r = 0; r < mjCols[c]; r++) {
-                        if(winningCells[c][r]) { // ระเบิดแค่ช่องที่ได้เงินเป๊ะๆ
+                        if(winningCells[c][r]) { 
                             stepObj.grid[c][r].explode = true;
-                            explodedAny = true;
                         }
                     }
                 }
                 
                 steps.push(stepObj);
 
-                // 3. สร้างกระดานใหม่ ทับช่องที่ระเบิดให้ของร่วงลงมาแบบฟิสิกส์
+                // 🌟 5. สร้างตารางใหม่ โดยเอาของที่เหลือร่วงลงมา และเติมของใหม่ด้านบน 🌟
                 let nextGrid = [];
                 for(let c=0; c<5; c++) {
                     let newCol = []; let explodeCount = 0;
+                    // ลูปจากล่างขึ้นบน เพื่อให้ของที่รอดร่วงลงไปกองข้างล่าง
                     for(let r=0; r<mjCols[c]; r++) {
                         let cell = stepObj.grid[c][r];
                         if(cell.explode) {
                             if(cell.gold) {
-                                newCol.push({sym: 'WILD', gold: false, wild: true, isNew: false}); // กรอบทองแตกเปลี่ยนเป็น Wild
+                                // ถ้ากรอบทองแตก ให้ใส่ Wild คาไว้ตำแหน่งเดิมของมัน (ไม่โดนลบ)
+                                newCol.push({sym: 'WILD', gold: false, wild: true, isNew: false}); 
                             } else {
-                                explodeCount++;
+                                explodeCount++; // นับจำนวนช่องว่าง
                             }
                         } else {
+                            // รอดชีวิต เก็บไว้
                             newCol.push({sym: cell.sym, gold: cell.gold, wild: cell.wild, isNew: false});
                         }
                     }
                     
+                    // เติมของใหม่จากข้างบนสุดให้เต็ม
                     let isGoldZone = (c >= 1 && c <= 3);
                     for(let i=0; i<explodeCount; i++) {
                         newCol.unshift({
@@ -198,13 +201,12 @@ io.on('connection', (socket) => {
                     }
                     nextGrid.push(newCol);
                 }
+                
                 currentGrid = nextGrid;
                 if(currentMultIdx < 3) currentMultIdx++;
-                currentCascade++;
-                
-                if(currentCascade > 15) break; // กันระบบแตกไม่หยุดทะลุจอ
+                cascadeCount++;
             } else {
-                // ถ้าไม่มีไลน์ชนะ ก็จบเทิร์น ส่งภาพกลับไปโชว์!
+                // 🌟 ไม่มีช่องแตกแล้ว จบการไหล 🌟
                 stepObj.payout = 0;
                 for(let c=0;c<5;c++) for(let r=0;r<mjCols[c];r++) stepObj.grid[c][r].explode = false;
                 steps.push(stepObj);
