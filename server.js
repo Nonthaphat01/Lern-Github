@@ -62,15 +62,18 @@ io.on('connection', (socket) => {
         if (rooms[data.room]) io.to(rooms[data.room].host).emit('zombieDamaged', data);
     });
 
+// ==========================================
+    // 🀄 ระบบสล็อต MAHJONG (PG Soft Style - อัปเดตแก้บั๊กไลน์จ่าย 100%)
     // ==========================================
-    // 🀄 ระบบสล็อต MAHJONG (PG Soft Style)
-    // ==========================================
+    const mjSyms = ['🀄', '🀙', '🀚', '🀐', '🀇', '🀫', '🀅', '🀆'];
+    
     socket.on('spinMahjong', (data) => {
         let bet = data.bet;
         let isFS = data.isFS || false;
         
+        // โอกาสที่ระบบจะแอบช่วยเสกให้ชนะ
         let isWin = Math.random() < (isFS ? 0.60 : 0.35); 
-        let targetCascades = isWin ? Math.floor(Math.random() * 4) + 1 : 0;
+        let forceWinTarget = isWin ? Math.floor(Math.random() * 4) + 1 : 0; 
         
         let mjCols = [4, 5, 5, 5, 4];
         let mults = isFS ? [2, 4, 6, 10] : [1, 2, 3, 5]; 
@@ -81,7 +84,7 @@ io.on('connection', (socket) => {
         let scCount = 0;
         let scChance = isFS ? 0 : 0.03; 
 
-        // 1. จำลองกระดานเริ่มต้น
+        // 1. สร้างกระดานเริ่มต้นแบบสุ่มทั้งหมด
         let currentGrid = [];
         for (let c = 0; c < 5; c++) {
             let col = [];
@@ -94,7 +97,7 @@ io.on('connection', (socket) => {
             currentGrid.push(col);
         }
 
-        // แจ็คพอตสแกตเตอร์ (หรือถ้ากดซื้อฟรีสปิน)
+        // แจ็คพอตเข้าฟรีสปิน (ถ้ากดซื้อ หรือฟลุ๊คเข้า)
         if (!isFS && (Math.random() < 0.015 || data.buyFS)) {
             scCount = 3;
             currentGrid[0][0] = {sym: '🧧', gold: false, wild: false};
@@ -103,26 +106,29 @@ io.on('connection', (socket) => {
         }
 
         let currentCascade = 0;
-        while(currentCascade <= targetCascades) {
+        while(true) { // 🌟 ไหลไปเรื่อยๆ จนกว่าภาพจะไม่ตรงกัน
             let stepObj = { grid: JSON.parse(JSON.stringify(currentGrid)), payout: 0, mult: mults[currentMultIdx] };
             
-            if (currentCascade < targetCascades) {
-                // สร้างจังหวะชนะให้ตรงเส้นไลน์
+            // ถ้าระบบอยากจะช่วยให้ชนะในเทิร์นนี้ จะเสกสัญลักษณ์ให้ตรงกัน
+            if (currentCascade < forceWinTarget) {
                 let winSym = mjSyms[Math.floor(Math.random() * mjSyms.length)];
+                if(winSym === '🧧') winSym = mjSyms[0]; // ป้องกันเสกสแกตเตอร์
                 let winLen = Math.random() < 0.2 ? 5 : (Math.random() < 0.5 ? 4 : 3);
                 for(let c=0; c<winLen; c++) {
                     let r = Math.floor(Math.random() * mjCols[c]);
                     stepObj.grid[c][r].sym = winSym;
-                    if (stepObj.grid[c][r].wild) stepObj.grid[c][r].wild = false;
+                    stepObj.grid[c][r].wild = false;
                 }
             }
 
-            // Engine เช็คผลชนะจริงๆ จากตาราง (สมจริง 100%)
+            // 🌟 2. คำนวณการชนะจากภาพที่เห็นตรงหน้า (ตรงกับที่ผู้เล่นเห็น 100%) 🌟
             let winningCells = Array(5).fill(0).map((_, i) => Array(mjCols[i]).fill(false));
             let stepPayout = 0;
             let hasWin = false;
 
             mjSyms.forEach(sym => {
+                if (sym === '🧧') return; // สแกตเตอร์ไม่นับวิธีชนะปกติ
+                
                 let m = 0; let ways = 1; let winReels = [];
                 for(let c = 0; c < 5; c++) {
                     let countInCol = 0; let matchedIndices = [];
@@ -133,9 +139,10 @@ io.on('connection', (socket) => {
                         }
                     }
                     if(countInCol > 0) { m++; ways *= countInCol; winReels.push(matchedIndices); } 
-                    else { break; }
+                    else { break; } // ขาดตอนเมื่อไหร่ ไลน์จ่ายหยุดทันที
                 }
-                if (m >= 3) {
+                
+                if (m >= 3) { // เรียง 3 คอลัมน์ขึ้นไปจากซ้ายถึงจะชนะ
                     hasWin = true;
                     let pt = {3: 0.5, 4: 1, 5: 2};
                     let baseWin = pt[m] * bet;
@@ -146,27 +153,24 @@ io.on('connection', (socket) => {
                 }
             });
 
-            if (hasWin && currentCascade < targetCascades) {
+            // 🌟 ถ้าตารางมีไลน์ชนะ (ไม่ว่าจะฟลุ๊คตกมาตรงเอง หรือระบบช่วย) ต้องจ่ายเงินเสมอ! 🌟
+            if (hasWin) {
                 stepObj.payout = Math.floor(stepPayout) || Math.floor(bet * 0.5);
                 totalPayout += stepObj.payout;
                 
                 let explodedAny = false;
                 for(let c = 0; c < 5; c++) {
                     for(let r = 0; r < mjCols[c]; r++) {
-                        // ระเบิดเฉพาะช่องที่ชนะ และไม่ใช่ Scatter
-                        if(winningCells[c][r] && stepObj.grid[c][r].sym !== '🧧') {
+                        if(winningCells[c][r]) { // ระเบิดแค่ช่องที่ได้เงินเป๊ะๆ
                             stepObj.grid[c][r].explode = true;
                             explodedAny = true;
                         }
                     }
                 }
                 
-                // กันเหนียว
-                if (!explodedAny) { stepObj.grid[0][0].explode = true; stepObj.grid[1][0].explode = true; stepObj.grid[2][0].explode = true; }
-                
                 steps.push(stepObj);
 
-                // สร้างกระดานใหม่ของร่วงมาแทนที่ (ฟิสิกส์การร่วง)
+                // 3. สร้างกระดานใหม่ ทับช่องที่ระเบิดให้ของร่วงลงมาแบบฟิสิกส์
                 let nextGrid = [];
                 for(let c=0; c<5; c++) {
                     let newCol = []; let explodeCount = 0;
@@ -174,7 +178,7 @@ io.on('connection', (socket) => {
                         let cell = stepObj.grid[c][r];
                         if(cell.explode) {
                             if(cell.gold) {
-                                newCol.push({sym: 'WILD', gold: false, wild: true, isNew: false}); // กรอบทองกลายเป็น Wild
+                                newCol.push({sym: 'WILD', gold: false, wild: true, isNew: false}); // กรอบทองแตกเปลี่ยนเป็น Wild
                             } else {
                                 explodeCount++;
                             }
@@ -197,7 +201,10 @@ io.on('connection', (socket) => {
                 currentGrid = nextGrid;
                 if(currentMultIdx < 3) currentMultIdx++;
                 currentCascade++;
+                
+                if(currentCascade > 15) break; // กันระบบแตกไม่หยุดทะลุจอ
             } else {
+                // ถ้าไม่มีไลน์ชนะ ก็จบเทิร์น ส่งภาพกลับไปโชว์!
                 stepObj.payout = 0;
                 for(let c=0;c<5;c++) for(let r=0;r<mjCols[c];r++) stepObj.grid[c][r].explode = false;
                 steps.push(stepObj);
