@@ -1,7 +1,7 @@
 {
   "name": "zombie-server",
   "version": "1.0.0",
-  "description": "Multiplayer Server for Zombie Game",
+  "description": "Multiplayer Server and Slot RNG Engine",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
