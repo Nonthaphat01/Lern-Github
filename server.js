@@ -97,10 +97,7 @@ io.on('connection', (socket) => {
     // 🀄 MAHJONG: Anti-Win System
     // ==========================================
     socket.on('spinMahjong', (data) => {
-        let bet = data.bet; 
-        let isFS = data.isFS || false;
-        let diff = data.difficulty || "Normal"; 
-        
+        let bet = data.bet; let isFS = data.isFS || false; let diff = data.difficulty || "Normal"; 
         let winProb = 0.45, fsWinProb = 0.65, scChance = 0.03;
         if(diff === "Very Easy") { winProb = 0.80; fsWinProb = 0.90; scChance = 0.08; }
         else if(diff === "Easy") { winProb = 0.60; fsWinProb = 0.75; scChance = 0.05; }
@@ -109,11 +106,8 @@ io.on('connection', (socket) => {
 
         let isWin = Math.random() < (isFS ? fsWinProb : winProb); 
         let forceWinTarget = isWin ? Math.floor(Math.random() * 4) + 1 : 0; 
-        
-        let mjCols = [4, 5, 5, 5, 4];
-        let mults = isFS ? [2, 4, 6, 10] : [1, 2, 3, 5]; 
-        let steps = []; let totalPayout = 0; let currentMultIdx = 0; let scCount = 0; 
-        scChance = isFS ? 0 : scChance; 
+        let mjCols = [4, 5, 5, 5, 4]; let mults = isFS ? [2, 4, 6, 10] : [1, 2, 3, 5]; 
+        let steps = []; let totalPayout = 0; let currentMultIdx = 0; let scCount = 0; scChance = isFS ? 0 : scChance; 
 
         let currentGrid = [];
         for (let c = 0; c < 5; c++) {
@@ -142,16 +136,13 @@ io.on('connection', (socket) => {
                     if(winSym === '🧧') winSym = mjSyms[0]; 
                     let winLen = Math.random() < 0.2 ? 5 : (Math.random() < 0.5 ? 4 : 3);
                     for(let c=0; c<winLen; c++) {
-                        let numSyms = Math.floor(Math.random() * 3) + 1; 
-                        numSyms = Math.min(numSyms, mjCols[c]);
+                        let numSyms = Math.floor(Math.random() * 3) + 1; numSyms = Math.min(numSyms, mjCols[c]);
                         let rows = [0,1,2,3,4].slice(0, mjCols[c]).sort(()=>Math.random()-0.5);
                         for(let i=0; i<numSyms; i++) { currentGrid[c][rows[i]].sym = winSym; currentGrid[c][rows[i]].wild = false; }
                     }
                 } else if (!isWin) {
-                    let col0 = currentGrid[0].map(c => c.sym);
-                    let col1 = currentGrid[1].map(c => c.sym);
+                    let col0 = currentGrid[0].map(c => c.sym); let col1 = currentGrid[1].map(c => c.sym);
                     let common = col0.filter(s => col1.includes(s) && s !== '🧧');
-                    
                     if (common.length > 0) {
                         for (let r=0; r < mjCols[2]; r++) {
                             if (common.includes(currentGrid[2][r].sym)) {
@@ -179,9 +170,7 @@ io.on('connection', (socket) => {
                     if(countInCol > 0) { m++; ways *= countInCol; winReels.push(matchedIndices); } else { break; } 
                 }
                 if (m >= 3) { 
-                    hasWin = true;
-                    let pt = {3: 0.5, 4: 1, 5: 2};
-                    let baseWin = pt[m] * bet;
+                    hasWin = true; let pt = {3: 0.5, 4: 1, 5: 2}; let baseWin = pt[m] * bet;
                     stepPayout += baseWin * ways * dropStep.mult; 
                     for(let c = 0; c < m; c++) { winReels[c].forEach(r => { winningCells[c][r] = true; }); }
                 }
@@ -191,9 +180,7 @@ io.on('connection', (socket) => {
                 steps.push(dropStep); 
                 let explodeStep = { grid: JSON.parse(JSON.stringify(dropStep.grid)), payout: Math.floor(stepPayout) || Math.floor(bet * 0.5), mult: mults[currentMultIdx], action: 'explode' };
                 totalPayout += explodeStep.payout;
-                for(let c = 0; c < 5; c++) {
-                    for(let r = 0; r < mjCols[c]; r++) { if(winningCells[c][r]) { explodeStep.grid[c][r].explode = true; } }
-                }
+                for(let c = 0; c < 5; c++) { for(let r = 0; r < mjCols[c]; r++) { if(winningCells[c][r]) { explodeStep.grid[c][r].explode = true; } } }
                 steps.push(explodeStep);
 
                 let nextGrid = [];
@@ -201,24 +188,15 @@ io.on('connection', (socket) => {
                     let newCol = []; let explodeCount = 0; let survivors = [];
                     for(let r=0; r<mjCols[c]; r++) {
                         let cell = explodeStep.grid[c][r];
-                        if(cell.explode) {
-                            if(cell.gold) survivors.push({sym: 'WILD', gold: false, wild: true, oldR: r});
-                            else explodeCount++;
-                        } else { survivors.push({sym: cell.sym, gold: cell.gold, wild: cell.wild, oldR: r}); }
+                        if(cell.explode) { if(cell.gold) survivors.push({sym: 'WILD', gold: false, wild: true, oldR: r}); else explodeCount++; } 
+                        else { survivors.push({sym: cell.sym, gold: cell.gold, wild: cell.wild, oldR: r}); }
                     }
                     let isGoldZone = (c >= 1 && c <= 3);
-                    for(let i=0; i<explodeCount; i++) {
-                        newCol.push({ sym: mjSyms[Math.floor(Math.random() * mjSyms.length)], gold: (isGoldZone && Math.random() < 0.35), wild: false, isNew: true, isFall: false, dropDist: mjCols[c] });
-                    }
-                    for(let i=0; i<survivors.length; i++) {
-                        let newR = explodeCount + i; let dropDist = newR - survivors[i].oldR;
-                        newCol.push({ sym: survivors[i].sym, gold: survivors[i].gold, wild: survivors[i].wild, isNew: false, isFall: (dropDist > 0), dropDist: dropDist });
-                    }
+                    for(let i=0; i<explodeCount; i++) { newCol.push({ sym: mjSyms[Math.floor(Math.random() * mjSyms.length)], gold: (isGoldZone && Math.random() < 0.35), wild: false, isNew: true, isFall: false, dropDist: mjCols[c] }); }
+                    for(let i=0; i<survivors.length; i++) { let newR = explodeCount + i; let dropDist = newR - survivors[i].oldR; newCol.push({ sym: survivors[i].sym, gold: survivors[i].gold, wild: survivors[i].wild, isNew: false, isFall: (dropDist > 0), dropDist: dropDist }); }
                     nextGrid.push(newCol);
                 }
-                currentGrid = nextGrid;
-                if(currentMultIdx < 3) currentMultIdx++;
-                currentCascade++;
+                currentGrid = nextGrid; if(currentMultIdx < 3) currentMultIdx++; currentCascade++;
             } else { steps.push(dropStep); break; }
         }
         socket.emit('mahjongResult', { success: true, steps: steps, totalPayout: totalPayout, isFreeSpin: (scCount >= 3) });
@@ -237,17 +215,12 @@ io.on('connection', (socket) => {
         else if(diff === "Hard") { winProb = 0.20; scChanceBase = 0.01; }
         else if(diff === "Super Hard") { winProb = 0.05; scChanceBase = 0.005; }
 
-        let isWin = Math.random() < winProb; 
-        let scChance = isFS ? 0 : scChanceBase; 
-        
+        let isWin = Math.random() < winProb; let scChance = isFS ? 0 : scChanceBase; 
         let reels = []; let scCount = 0; let ways = 1;
         for (let c=0; c<6; c++) {
             let num = Math.floor(Math.random() * 5) + 3; ways *= num;
             let col = [];
-            for (let r=0; r<num; r++) {
-                if (Math.random() < scChance && scCount < 5) { col.push('sc'); scCount++; } 
-                else col.push(mwSyms[Math.floor(Math.random()*mwSyms.length)]);
-            }
+            for (let r=0; r<num; r++) { if (Math.random() < scChance && scCount < 5) { col.push('sc'); scCount++; } else col.push(mwSyms[Math.floor(Math.random()*mwSyms.length)]); }
             reels.push(col);
         }
 
@@ -256,10 +229,7 @@ io.on('connection', (socket) => {
             let len = Math.floor(Math.random() * 3) + 3; 
             for (let c=0; c<len; c++) reels[c][0] = winSym;
         } else {
-            let col0 = reels[0];
-            let col1 = reels[1];
-            let common = col0.filter(s => col1.includes(s) && s !== 'sc');
-            
+            let col0 = reels[0]; let col1 = reels[1]; let common = col0.filter(s => col1.includes(s) && s !== 'sc');
             if (common.length > 0) {
                 for(let r=0; r<reels[2].length; r++) {
                     if (common.includes(reels[2][r])) {
@@ -274,7 +244,6 @@ io.on('connection', (socket) => {
         let finalMult = roundMult; let newAcc = accMult;
         if (isFS) { if (roundMult > 0) newAcc += roundMult; finalMult = newAcc; }
         let payout = isWin ? Math.floor(bet * (Math.random() * 2 + 0.5) * (finalMult > 0 ? finalMult : 1)) : 0;
-
         socket.emit('megawaysResult', { success: true, result: { reels: reels, ways: ways, isFreeSpin: (scCount >= 4) }, payout: payout, multiplier: finalMult, roundMultiplier: roundMult, newAccumulatedMult: newAcc });
     });
 
@@ -282,9 +251,7 @@ io.on('connection', (socket) => {
     // 🟢 PLINKO
     // ==========================================
     socket.on('dropPlinko', (data) => {
-        let count = data.count; let bet = data.bet; 
-        let diff = data.difficulty || "Normal"; 
-        
+        let count = data.count; let bet = data.bet; let diff = data.difficulty || "Normal"; 
         let activeChances = plChancesNormal;
         if(diff === "Very Easy") activeChances = [2, 3, 4, 5, 6, 8, 10, 12, 12, 10, 8, 6, 5, 4, 3, 2]; 
         else if(diff === "Easy") activeChances = [0.5, 1, 2, 4, 5, 8, 10, 19.5, 19.5, 10, 8, 5, 4, 2, 1, 0.5];
@@ -305,20 +272,11 @@ io.on('connection', (socket) => {
     socket.on('disconnect', () => {
         onlineCount--;
         io.emit('onlineUpdate', onlineCount);
-        console.log('Player disconnected:', socket.id);
-        
         for (let roomName in rooms) {
             if (rooms[roomName].players[socket.id]) {
                 delete rooms[roomName].players[socket.id];
-                if (Object.keys(rooms[roomName].players).length === 0) {
-                    delete rooms[roomName];
-                } else {
-                    io.to(roomName).emit('roomUpdated', { 
-                        host: rooms[roomName].host, 
-                        players: Object.values(rooms[roomName].players),
-                        state: rooms[roomName].state 
-                    });
-                }
+                if (Object.keys(rooms[roomName].players).length === 0) { delete rooms[roomName]; } 
+                else { io.to(roomName).emit('roomUpdated', { host: rooms[roomName].host, players: Object.values(rooms[roomName].players), state: rooms[roomName].state }); }
             }
         }
     });
