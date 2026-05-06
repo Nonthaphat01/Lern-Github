@@ -45,7 +45,7 @@ io.on('connection', (socket) => {
     });
 
     // ==========================================
-    // 🧟 ZOMBIE DEFENSE (Turbo Volatile Mode)
+    // 🧟 ZOMBIE DEFENSE (True Multiplayer Sync)
     // ==========================================
     socket.on('requestRooms', () => {
         try {
@@ -63,7 +63,7 @@ io.on('connection', (socket) => {
         try {
             const roomName = data.roomName;
             socket.join(roomName);
-            if (!rooms[roomName]) rooms[roomName] = { host: socket.id, state: 'waiting', players: {} };
+            if (!rooms[roomName]) rooms[roomName] = { host: socket.id, state: 'waiting', players: {}, bunkers: null };
             rooms[roomName].players[socket.id] = { name: data.playerName, id: socket.id };
             
             io.to(roomName).emit('roomUpdated', { 
@@ -83,11 +83,35 @@ io.on('connection', (socket) => {
         } catch (e) { console.error(e); }
     });
 
+    // 🗺️ ระบบจัดการแผนที่ (บันทึกไว้ให้คนจอยตามหลัง)
     socket.on('syncMap', (data) => {
-        if(data && data.room) socket.to(data.room).emit('syncMap', data.bunkers);
+        if(data && data.room) {
+            if (rooms[data.room]) rooms[data.room].bunkers = data.bunkers; // เซฟแผนที่ไว้ที่ห้อง
+            socket.to(data.room).emit('syncMap', data.bunkers);
+        }
     });
 
-    // 🚀 เปิด Volatile Mode: เลียนแบบ UDP ให้ลื่นหัวแตก
+    socket.on('requestMap', (roomName) => {
+        if(rooms[roomName] && rooms[roomName].bunkers) {
+            socket.emit('syncMap', rooms[roomName].bunkers); // โยนแผนที่ให้คนที่ร้องขอ (คนจอยทีหลัง)
+        }
+    });
+
+    // 🔫 ระบบซิงค์กระสุน/แอนิเมชันโจมตีของเพื่อน
+    socket.on('playerShoot', (data) => {
+        if (data && data.room && rooms[data.room]) {
+            socket.volatile.to(data.room).emit('otherShoot', { id: socket.id, ...data });
+        }
+    });
+
+    // 💬 ระบบสติ๊กเกอร์อีโมจิ
+    socket.on('sendSticker', (data) => {
+        if (data && data.room && rooms[data.room]) {
+            io.to(data.room).emit('playerSticker', { id: socket.id, sticker: data.sticker });
+        }
+    });
+
+    // 🚀 ระบบเดิน + ซิงค์ซอมบี้ (Volatile Mode ลื่นๆ)
     socket.on('updatePlayer', (data) => { 
         if (data && data.room && rooms[data.room] && rooms[data.room].state === 'playing') {
             socket.volatile.to(data.room).emit('updateOthers', { id: socket.id, ...data }); 
@@ -107,7 +131,7 @@ io.on('connection', (socket) => {
     });
 
     // ==========================================
-    // 🀄 MAHJONG: Anti-Win System
+    // 🀄 MAHJONG & MEGAWAYS & PLINKO
     // ==========================================
     socket.on('spinMahjong', (data) => {
         try {
@@ -217,9 +241,6 @@ io.on('connection', (socket) => {
         } catch (e) { console.error(e); socket.emit('mahjongResult', { error: "Server Error" }); }
     });
 
-    // ==========================================
-    // 🎰 MEGAWAYS: Anti-Win System
-    // ==========================================
     socket.on('spinMegaways', (data) => {
         try {
             let bet = data.bet; let isFS = data.isFS; let accMult = data.accMult;
@@ -264,9 +285,6 @@ io.on('connection', (socket) => {
         } catch (e) { console.error(e); socket.emit('megawaysResult', { error: "Server Error" }); }
     });
 
-    // ==========================================
-    // 🟢 PLINKO
-    // ==========================================
     socket.on('dropPlinko', (data) => {
         try {
             let count = data.count; let bet = data.bet; let diff = data.difficulty || "Normal"; 
