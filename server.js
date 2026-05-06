@@ -3,7 +3,7 @@ const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
 
-// 🛡️ ระบบอมตะ (Crash-Proof): ดักจับ Error ไม่ให้เซิร์ฟเวอร์ปิดตัวเอง
+// 🛡️ ระบบอมตะ (Crash-Proof)
 process.on('uncaughtException', (err) => { console.error('เจอ Error (แต่ไม่ดับ):', err); });
 process.on('unhandledRejection', (reason, promise) => { console.error('เจอ Rejection (แต่ไม่ดับ):', reason); });
 
@@ -11,13 +11,13 @@ const app = express();
 app.use(cors());
 
 app.get('/', (req, res) => {
-    res.send('<h1 style="color:green; text-align:center;">✅ Game Server is Online (True Multiplayer 🚀 + Crash Proof 🛡️)</h1>');
+    res.send('<h1 style="color:green; text-align:center;">✅ Game Server is Online (True Multiplayer Stable Mode 🚀)</h1>');
 });
 
 const server = http.createServer(app);
 const io = new Server(server, { 
     cors: { origin: "*", methods: ["GET", "POST"] },
-    allowEIO3: true // เผื่อเบราว์เซอร์เวอร์ชั่นเก่า
+    allowEIO3: true
 });
 
 const rooms = {};
@@ -45,7 +45,7 @@ io.on('connection', (socket) => {
     });
 
     // ==========================================
-    // 🧟 ZOMBIE DEFENSE (True Multiplayer Sync)
+    // 🧟 ZOMBIE DEFENSE (Stable Sync Mode)
     // ==========================================
     socket.on('requestRooms', () => {
         try {
@@ -83,44 +83,44 @@ io.on('connection', (socket) => {
         } catch (e) { console.error(e); }
     });
 
-    // 🗺️ ระบบจัดการแผนที่ (บันทึกไว้ให้คนจอยตามหลัง)
     socket.on('syncMap', (data) => {
         if(data && data.room) {
-            if (rooms[data.room]) rooms[data.room].bunkers = data.bunkers; // เซฟแผนที่ไว้ที่ห้อง
+            if (rooms[data.room]) rooms[data.room].bunkers = data.bunkers;
             socket.to(data.room).emit('syncMap', data.bunkers);
         }
     });
 
     socket.on('requestMap', (roomName) => {
         if(rooms[roomName] && rooms[roomName].bunkers) {
-            socket.emit('syncMap', rooms[roomName].bunkers); // โยนแผนที่ให้คนที่ร้องขอ (คนจอยทีหลัง)
+            socket.emit('syncMap', rooms[roomName].bunkers); 
         }
     });
 
-    // 🔫 ระบบซิงค์กระสุน/แอนิเมชันโจมตีของเพื่อน
+    // 🔫 ส่งกระสุนและอาวุธแบบเสถียร
     socket.on('playerShoot', (data) => {
-        if (data && data.room && rooms[data.room]) {
-            socket.volatile.to(data.room).emit('otherShoot', { id: socket.id, ...data });
+        if (data && data.room) {
+            socket.to(data.room).emit('otherShoot', { id: socket.id, ...data });
         }
     });
 
-    // 💬 ระบบสติ๊กเกอร์อีโมจิ
+    // 💬 สติ๊กเกอร์
     socket.on('sendSticker', (data) => {
-        if (data && data.room && rooms[data.room]) {
+        if (data && data.room) {
             io.to(data.room).emit('playerSticker', { id: socket.id, sticker: data.sticker });
         }
     });
 
-    // 🚀 ระบบเดิน + ซิงค์ซอมบี้ (Volatile Mode ลื่นๆ)
+    // 🚀 ส่งข้อมูลพิกัด (ลบ volatile ออกเพื่อให้ Render ไม่บล็อกการส่งข้อมูล)
     socket.on('updatePlayer', (data) => { 
         if (data && data.room && rooms[data.room] && rooms[data.room].state === 'playing') {
-            socket.volatile.to(data.room).emit('updateOthers', { id: socket.id, ...data }); 
+            socket.to(data.room).emit('updateOthers', { id: socket.id, ...data }); 
         }
     });
 
     socket.on('syncZombies', (data) => { 
-        if (data && data.room && rooms[data.room] && rooms[data.room].host === socket.id) {
-            socket.volatile.to(data.room).emit('syncZombies', { zombies: data.zombies, enemyBullets: data.enemyBullets, hazards: data.hazards }); 
+        if (data && data.room) {
+            // ปล่อยให้เซิร์ฟเวอร์กระจายให้ลูกห้องแบบเต็มที่ 100% ไม่ดรอป
+            socket.to(data.room).emit('syncZombies', data); 
         }
     });
 
@@ -131,7 +131,7 @@ io.on('connection', (socket) => {
     });
 
     // ==========================================
-    // 🀄 MAHJONG & MEGAWAYS & PLINKO
+    // 🀄 MAHJONG & MEGAWAYS & PLINKO (ส่วนเดิม ไม่มีการเปลี่ยนแปลง)
     // ==========================================
     socket.on('spinMahjong', (data) => {
         try {
