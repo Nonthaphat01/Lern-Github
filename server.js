@@ -110,7 +110,7 @@ io.on('connection', (socket) => {
         }
     });
 
-    // 🚀 ส่งข้อมูลพิกัด (ลบ volatile ออกเพื่อให้ Render ไม่บล็อกการส่งข้อมูล)
+    // 🚀 ส่งข้อมูลพิกัด 
     socket.on('updatePlayer', (data) => { 
         if (data && data.room && rooms[data.room] && rooms[data.room].state === 'playing') {
             socket.to(data.room).emit('updateOthers', { id: socket.id, ...data }); 
@@ -119,7 +119,6 @@ io.on('connection', (socket) => {
 
     socket.on('syncZombies', (data) => { 
         if (data && data.room) {
-            // ปล่อยให้เซิร์ฟเวอร์กระจายให้ลูกห้องแบบเต็มที่ 100% ไม่ดรอป
             socket.to(data.room).emit('syncZombies', data); 
         }
     });
@@ -131,7 +130,7 @@ io.on('connection', (socket) => {
     });
 
     // ==========================================
-    // 🀄 MAHJONG & MEGAWAYS & PLINKO (ส่วนเดิม ไม่มีการเปลี่ยนแปลง)
+    // 🀄 MAHJONG & MEGAWAYS & PLINKO
     // ==========================================
     socket.on('spinMahjong', (data) => {
         try {
