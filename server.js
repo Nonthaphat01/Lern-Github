@@ -11,7 +11,7 @@ const app = express();
 app.use(cors());
 
 app.get('/', (req, res) => {
-    res.send('<h1 style="color:green; text-align:center;">✅ Game Server is Online (Turbo Volatile Mode 🚀 + Crash Proof 🛡️)</h1>');
+    res.send('<h1 style="color:green; text-align:center;">✅ Game Server is Online (True Multiplayer 🚀 + Crash Proof 🛡️)</h1>');
 });
 
 const server = http.createServer(app);
