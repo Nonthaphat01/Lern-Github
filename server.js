@@ -35,6 +35,20 @@ io.on('connection', (socket) => {
         io.emit('newChatMessage', msgObj); 
     });
 
+    socket.on('joinRoom', (data) => {
+        const roomName = data.roomName;
+        socket.join(roomName);
+        if (!rooms[roomName]) rooms[roomName] = { host: socket.id, state: 'waiting', players: {} };
+        rooms[roomName].players[socket.id] = { name: data.playerName, id: socket.id };
+        
+        // 🌟 แก้ตรงนี้: ส่งข้อมูลห้องและรายชื่อให้ทุกคนในห้องเสมอ ไม่ว่าจะกำลังรอหรือเล่นอยู่ 🌟
+        io.to(roomName).emit('roomUpdated', { 
+            host: rooms[roomName].host, 
+            players: Object.values(rooms[roomName].players),
+            state: rooms[roomName].state // ส่งสถานะไปด้วย ('waiting' หรือ 'playing')
+        });
+    });
+    
     // 🌐 ระบบดึงรายชื่อห้องที่กำลังเปิดอยู่
     socket.on('requestRooms', () => {
         let activeRooms = [];
