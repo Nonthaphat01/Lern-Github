@@ -1,17 +1,23 @@
 const express = require('express');
 const http = require('http');
-const { Server } = require('socket.io');
+// 🌟 1. นำเข้าแพ็กเกจ Geckos.io
+const geckos = require('@geckos.io/server').default;
 const cors = require('cors');
 
 const app = express();
 app.use(cors());
 
 app.get('/', (req, res) => {
-    res.send('<h1 style="color:green; text-align:center;">✅ Game Server & Slot RNG is Online!</h1>');
+    res.send('<h1 style="color:green; text-align:center;">✅ Geckos.io Game Server (UDP) is Online!</h1>');
 });
 
 const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: "*", methods: ["GET", "POST"] } });
+
+// 🌟 2. เปิดใช้งาน Geckos.io และอนุญาต CORS
+const io = geckos({
+    cors: { origin: '*' }
+});
+io.addServer(server);
 
 const rooms = {};
 
@@ -23,61 +29,84 @@ const plChancesNormal = [0.05, 0.1, 0.2, 0.5, 1.5, 4, 10, 33.65, 33.65, 10, 4, 1
 let onlineCount = 0;
 let chatHistory = [];
 
-io.on('connection', (socket) => {
+// 🌟 3. เปลี่ยนจาก io.on('connection', socket => ...) เป็น io.onConnection(channel => ...)
+io.onConnection((channel) => {
     // 💬 LOBBY SYSTEM
     onlineCount++;
-    io.emit('onlineUpdate', onlineCount); 
-    socket.emit('chatHistory', chatHistory); 
+    io.emit('onlineUpdate', onlineCount, { reliable: true }); // ข้อมูลสำคัญ ต้อง reliable
+    channel.emit('chatHistory', chatHistory, { reliable: true }); 
 
-    socket.on('sendChat', (data) => {
+    channel.on('sendChat', (data) => {
         const msgObj = { u: data.user, msg: data.msg };
         chatHistory.push(msgObj);
         if(chatHistory.length > 50) chatHistory.shift(); 
-        io.emit('newChatMessage', msgObj); 
+        io.emit('newChatMessage', msgObj, { reliable: true }); 
     });
 
     // ==========================================
-    // 🧟 ZOMBIE DEFENSE (เพิ่มครบแล้ว 100%)
+    // 🧟 ZOMBIE DEFENSE
     // ==========================================
-    socket.on('requestRooms', () => {
+    channel.on('requestRooms', () => {
         let activeRooms = [];
         for(let r in rooms) {
             if(!r.startsWith('SOLO_') && (rooms[r].state === 'waiting' || rooms[r].state === 'playing')) {
                 activeRooms.push({ name: r, players: Object.keys(rooms[r].players).length });
             }
         }
-        socket.emit('activeRoomsList', activeRooms);
+        channel.emit('activeRoomsList', activeRooms, { reliable: true });
     });
 
-    socket.on('joinRoom', (data) => {
+    channel.on('joinRoom', (data) => {
         const roomName = data.roomName;
-        socket.join(roomName);
-        if (!rooms[roomName]) rooms[roomName] = { host: socket.id, state: 'waiting', players: {} };
-        rooms[roomName].players[socket.id] = { name: data.playerName, id: socket.id };
+        channel.join(roomName);
+        if (!rooms[roomName]) rooms[roomName] = { host: channel.id, state: 'waiting', players: {} };
+        rooms[roomName].players[channel.id] = { name: data.playerName, id: channel.id };
         
-        io.to(roomName).emit('roomUpdated', { 
+        io.room(roomName).emit('roomUpdated', { 
             host: rooms[roomName].host, 
             players: Object.values(rooms[roomName].players),
             state: rooms[roomName].state 
-        });
+        }, { reliable: true });
     });
 
-    socket.on('startGame', (roomName) => { 
-        if (rooms[roomName] && rooms[roomName].host === socket.id) { 
+    channel.on('startGame', (roomName) => { 
+        if (rooms[roomName] && rooms[roomName].host === channel.id) { 
             rooms[roomName].state = 'playing'; 
-            io.to(roomName).emit('gameStarted', { host: rooms[roomName].host }); 
+            io.room(roomName).emit('gameStarted', { host: rooms[roomName].host }, { reliable: true }); 
         } 
     });
-    socket.to(data.room).emit('syncMap', data.bunkers);
-    socket.on('updatePlayer', (data) => { if (rooms[data.room] && rooms[data.room].state === 'playing') socket.to(data.room).emit('updateOthers', { id: socket.id, ...data }); });
-    socket.on('syncZombies', (data) => { if (rooms[data.room] && rooms[data.room].host === socket.id) socket.to(data.room).emit('syncZombies', { zombies: data.zombies, enemyBullets: data.enemyBullets, hazards: data.hazards }); });
-    socket.on('damageZombie', (data) => { if (rooms[data.room]) io.to(rooms[data.room].host).emit('zombieDamaged', data); });
 
+    // 🌟 แก้บั๊กโค้ดเดิมให้: จับเข้า .on ให้เรียบร้อย
+    channel.on('syncMap', (data) => {
+        // ส่งแผนที่แบบห้ามตกหล่น
+        channel.broadcast.room(data.room).emit('syncMap', data.bunkers, { reliable: true });
+    });
+
+    // 🚀 ระบบเดินยิง: วิ่งผ่าน UDP เพียวๆ (ลื่นที่สุด ไม่ต้องใส่ reliable)
+    channel.on('updatePlayer', (data) => { 
+        if (rooms[data.room] && rooms[data.room].state === 'playing') {
+            channel.broadcast.room(data.room).emit('updateOthers', { id: channel.id, ...data }); 
+        }
+    });
+
+    // 🚀 ซิงค์ซอมบี้ผ่าน UDP เพียวๆ เช่นกัน (20 ครั้งต่อวิ)
+    channel.on('syncZombies', (data) => { 
+        if (rooms[data.room] && rooms[data.room].host === channel.id) {
+            channel.broadcast.room(data.room).emit('syncZombies', { zombies: data.zombies, enemyBullets: data.enemyBullets, hazards: data.hazards }); 
+        }
+    });
+
+    // ซอมบี้โดนยิงเลือดลด (ข้อมูลสำคัญ ส่งให้ทุกคนในห้องไปเลย)
+    channel.on('damageZombie', (data) => { 
+        if (rooms[data.room]) {
+            io.room(data.room).emit('zombieDamaged', data, { reliable: true }); 
+        }
+    });
 
     // ==========================================
     // 🀄 MAHJONG: Anti-Win System
     // ==========================================
-    socket.on('spinMahjong', (data) => {
+    channel.on('spinMahjong', (data) => {
         let bet = data.bet; 
         let isFS = data.isFS || false;
         let diff = data.difficulty || "Normal"; 
@@ -202,13 +231,14 @@ io.on('connection', (socket) => {
                 currentCascade++;
             } else { steps.push(dropStep); break; }
         }
-        socket.emit('mahjongResult', { success: true, steps: steps, totalPayout: totalPayout, isFreeSpin: (scCount >= 3) });
+        // ผลลัพธ์สล็อตห้ามตกหล่น (reliable)
+        channel.emit('mahjongResult', { success: true, steps: steps, totalPayout: totalPayout, isFreeSpin: (scCount >= 3) }, { reliable: true });
     });
 
     // ==========================================
     // 🎰 MEGAWAYS: Anti-Win System
     // ==========================================
-    socket.on('spinMegaways', (data) => {
+    channel.on('spinMegaways', (data) => {
         let bet = data.bet; let isFS = data.isFS; let accMult = data.accMult;
         let diff = data.difficulty || "Normal"; 
         
@@ -256,13 +286,13 @@ io.on('connection', (socket) => {
         if (isFS) { if (roundMult > 0) newAcc += roundMult; finalMult = newAcc; }
         let payout = isWin ? Math.floor(bet * (Math.random() * 2 + 0.5) * (finalMult > 0 ? finalMult : 1)) : 0;
 
-        socket.emit('megawaysResult', { success: true, result: { reels: reels, ways: ways, isFreeSpin: (scCount >= 4) }, payout: payout, multiplier: finalMult, roundMultiplier: roundMult, newAccumulatedMult: newAcc });
+        channel.emit('megawaysResult', { success: true, result: { reels: reels, ways: ways, isFreeSpin: (scCount >= 4) }, payout: payout, multiplier: finalMult, roundMultiplier: roundMult, newAccumulatedMult: newAcc }, { reliable: true });
     });
 
     // ==========================================
     // 🟢 PLINKO
     // ==========================================
-    socket.on('dropPlinko', (data) => {
+    channel.on('dropPlinko', (data) => {
         let count = data.count; let bet = data.bet; 
         let diff = data.difficulty || "Normal"; 
         
@@ -280,15 +310,31 @@ io.on('connection', (socket) => {
             let payout = bet * plMults[bin]; totalPayout += payout; 
             results.push({ bin: bin, multiplier: plMults[bin], payout: payout }); 
         }
-        socket.emit('plinkoResult', { success: true, results: results, totalPayout: totalPayout });
+        channel.emit('plinkoResult', { success: true, results: results, totalPayout: totalPayout }, { reliable: true });
     });
 
-    socket.on('disconnect', () => {
+    channel.onDisconnect(() => {
         onlineCount--;
-        io.emit('onlineUpdate', onlineCount);
-        console.log('Player disconnected:', socket.id);
+        io.emit('onlineUpdate', onlineCount, { reliable: true });
+        console.log('Player disconnected:', channel.id);
+        
+        // ล้างข้อมูลห้องถ้าหลุด (ป้องกันห้องค้าง)
+        for (let roomName in rooms) {
+            if (rooms[roomName].players[channel.id]) {
+                delete rooms[roomName].players[channel.id];
+                if (Object.keys(rooms[roomName].players).length === 0) {
+                    delete rooms[roomName]; // ถ้าห้องว่าง ลบห้องทิ้ง
+                } else {
+                    io.room(roomName).emit('roomUpdated', { 
+                        host: rooms[roomName].host, 
+                        players: Object.values(rooms[roomName].players),
+                        state: rooms[roomName].state 
+                    }, { reliable: true });
+                }
+            }
+        }
     });
 });
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => { console.log(`Server is running on port ${PORT}`); });
+server.listen(PORT, () => { console.log(`🚀 Geckos.io Server running on port ${PORT}`); });
