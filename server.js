@@ -96,21 +96,18 @@ io.on('connection', (socket) => {
         }
     });
 
-    // 🔫 ส่งกระสุนและอาวุธแบบเสถียร
     socket.on('playerShoot', (data) => {
         if (data && data.room) {
             socket.to(data.room).emit('otherShoot', { id: socket.id, ...data });
         }
     });
 
-    // 💬 สติ๊กเกอร์
     socket.on('sendSticker', (data) => {
         if (data && data.room) {
             io.to(data.room).emit('playerSticker', { id: socket.id, sticker: data.sticker });
         }
     });
 
-    // 🚀 ส่งข้อมูลพิกัด 
     socket.on('updatePlayer', (data) => { 
         if (data && data.room && rooms[data.room] && rooms[data.room].state === 'playing') {
             socket.to(data.room).emit('updateOthers', { id: socket.id, ...data }); 
