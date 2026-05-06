@@ -6,13 +6,10 @@
   "scripts": {
     "start": "node server.js"
   },
-  {
-  "name": "my-game-server",
-  "version": "1.0.0",
   "dependencies": {
     "cors": "^2.8.5",
     "express": "^4.18.2",
     "socket.io": "^4.7.2",
-    "@geckos.io/server": "^3.1.0" 
+    "@geckos.io/server": "^3.1.0"
   }
 }
