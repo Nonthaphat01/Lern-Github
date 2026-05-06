@@ -35,6 +35,18 @@ io.on('connection', (socket) => {
         io.emit('newChatMessage', msgObj); 
     });
 
+    // 🌐 ระบบดึงรายชื่อห้องที่กำลังเปิดอยู่
+    socket.on('requestRooms', () => {
+        let activeRooms = [];
+        for(let r in rooms) {
+            // ไม่ดึงห้องที่คนเล่นโหมด SOLO
+            if(!r.startsWith('SOLO_') && (rooms[r].state === 'waiting' || rooms[r].state === 'playing')) {
+                activeRooms.push({ name: r, players: Object.keys(rooms[r].players).length });
+            }
+        }
+        socket.emit('activeRoomsList', activeRooms);
+    });
+
     // ==========================================
     // 🀄 MAHJONG: Anti-Win System
     // ==========================================
