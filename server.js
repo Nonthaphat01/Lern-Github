@@ -20,7 +20,7 @@ const rooms = {};
 const mjSyms = ['🀄', '🀙', '🀚', '🀐', '🀇', '🀫', '🀅', '🀆'];
 const mwSyms = ['s1','s2','s3','s4','s5','s6','s7'];
 const plMults = [110, 41, 10, 5, 3, 1.5, 1, 0.5, 0.5, 1, 1.5, 3, 5, 10, 41, 110]; 
-const plChances = [0.05, 0.1, 0.2, 0.5, 1.5, 4, 10, 33.65, 33.65, 10, 4, 1.5, 0.5, 0.2, 0.1, 0.05];
+const plChancesNormal = [0.05, 0.1, 0.2, 0.5, 1.5, 4, 10, 33.65, 33.65, 10, 4, 1.5, 0.5, 0.2, 0.1, 0.05];
 
 // 🌟 ตัวแปรสำหรับ Lobby (แชท & นับคนออนไลน์) 🌟
 let onlineCount = 0;
@@ -57,16 +57,27 @@ io.on('connection', (socket) => {
     socket.on('damageZombie', (data) => { if (rooms[data.room]) io.to(rooms[data.room].host).emit('zombieDamaged', data); });
 
     // ==========================================
-    // 🀄 ระบบสล็อต MAHJONG
+    // 🀄 ระบบสล็อต MAHJONG (ปรับตามความยาก)
     // ==========================================
     socket.on('spinMahjong', (data) => {
-        let bet = data.bet; let isFS = data.isFS || false;
-        let isWin = Math.random() < (isFS ? 0.60 : 0.35); 
+        let bet = data.bet; 
+        let isFS = data.isFS || false;
+        let diff = data.difficulty || "Normal"; // 🌟 รับค่าความยากจากเว็บ
+        
+        // 🌟 เซ็ตโอกาสชนะตามระดับความยาก 🌟
+        let winProb = 0.35, fsWinProb = 0.60, scChance = 0.03;
+        if(diff === "Very Easy") { winProb = 0.70; fsWinProb = 0.90; scChance = 0.08; }
+        else if(diff === "Easy") { winProb = 0.50; fsWinProb = 0.75; scChance = 0.05; }
+        else if(diff === "Hard") { winProb = 0.20; fsWinProb = 0.40; scChance = 0.01; }
+        else if(diff === "Super Hard") { winProb = 0.05; fsWinProb = 0.15; scChance = 0.005; }
+
+        let isWin = Math.random() < (isFS ? fsWinProb : winProb); 
         let forceWinTarget = isWin ? Math.floor(Math.random() * 4) + 1 : 0; 
         
         let mjCols = [4, 5, 5, 5, 4];
         let mults = isFS ? [2, 4, 6, 10] : [1, 2, 3, 5]; 
-        let steps = []; let totalPayout = 0; let currentMultIdx = 0; let scCount = 0; let scChance = isFS ? 0 : 0.03; 
+        let steps = []; let totalPayout = 0; let currentMultIdx = 0; let scCount = 0; 
+        scChance = isFS ? 0 : scChance; 
 
         let currentGrid = [];
         for (let c = 0; c < 5; c++) {
@@ -80,7 +91,7 @@ io.on('connection', (socket) => {
             currentGrid.push(col);
         }
 
-        if (!isFS && (Math.random() < 0.015 || data.buyFS)) {
+        if (!isFS && (Math.random() < (scChance/2) || data.buyFS)) {
             scCount = 3;
             currentGrid[0][0] = {sym: '🧧', gold: false, wild: false, isNew: true, isFall: false, dropDist: mjCols[0]};
             currentGrid[2][0] = {sym: '🧧', gold: false, wild: false, isNew: true, isFall: false, dropDist: mjCols[2]};
@@ -174,11 +185,22 @@ io.on('connection', (socket) => {
     });
 
     // ==========================================
-    // 🎰 ระบบสล็อต MEGAWAYS
+    // 🎰 ระบบสล็อต MEGAWAYS (ปรับตามความยาก)
     // ==========================================
     socket.on('spinMegaways', (data) => {
         let bet = data.bet; let isFS = data.isFS; let accMult = data.accMult;
-        let isWin = Math.random() < 0.40; let scChance = isFS ? 0 : 0.03; 
+        let diff = data.difficulty || "Normal"; // 🌟 รับค่าความยากจากเว็บ
+        
+        // 🌟 เซ็ตโอกาสชนะตามระดับความยาก 🌟
+        let winProb = 0.40, scChanceBase = 0.03;
+        if(diff === "Very Easy") { winProb = 0.80; scChanceBase = 0.08; }
+        else if(diff === "Easy") { winProb = 0.60; scChanceBase = 0.05; }
+        else if(diff === "Hard") { winProb = 0.20; scChanceBase = 0.01; }
+        else if(diff === "Super Hard") { winProb = 0.05; scChanceBase = 0.005; }
+
+        let isWin = Math.random() < winProb; 
+        let scChance = isFS ? 0 : scChanceBase; 
+        
         let reels = []; let scCount = 0; let ways = 1;
         for (let c=0; c<6; c++) {
             let num = Math.floor(Math.random() * 5) + 3; ways *= num;
@@ -202,14 +224,24 @@ io.on('connection', (socket) => {
     });
 
     // ==========================================
-    // 🟢 ระบบ PLINKO
+    // 🟢 ระบบ PLINKO (ปรับตามความยาก)
     // ==========================================
     socket.on('dropPlinko', (data) => {
-        let count = data.count; let bet = data.bet; let results = []; let totalPayout = 0;
+        let count = data.count; let bet = data.bet; 
+        let diff = data.difficulty || "Normal"; // 🌟 รับค่าความยากจากเว็บ
+        
+        // 🌟 ปรับฐานการสุ่มลูกบอลให้ตกขอบ (รวย) หรือตกกลาง (จน) ตามความยาก 🌟
+        let activeChances = plChancesNormal;
+        if(diff === "Very Easy") activeChances = [2, 3, 4, 5, 6, 8, 10, 12, 12, 10, 8, 6, 5, 4, 3, 2]; // โอกาสตกขอบเยอะมาก
+        else if(diff === "Easy") activeChances = [0.5, 1, 2, 4, 5, 8, 10, 19.5, 19.5, 10, 8, 5, 4, 2, 1, 0.5];
+        else if(diff === "Hard") activeChances = [0.01, 0.02, 0.05, 0.1, 0.5, 2, 5, 42.32, 42.32, 5, 2, 0.5, 0.1, 0.05, 0.02, 0.01]; // กองรวมกันตรงกลาง (0.5x)
+        else if(diff === "Super Hard") activeChances = [0.001, 0.005, 0.01, 0.05, 0.1, 1, 2, 46.834, 46.834, 2, 1, 0.1, 0.05, 0.01, 0.005, 0.001];
+
+        let results = []; let totalPayout = 0;
         for(let i=0; i<count; i++) {
-            let sum = plChances.reduce((a, b) => a + b, 0); 
+            let sum = activeChances.reduce((a, b) => a + b, 0); 
             let r = Math.random() * sum; let bin = 0; let current = 0; 
-            for (let j = 0; j < 16; j++) { current += plChances[j]; if (r <= current) { bin = j; break; } } 
+            for (let j = 0; j < 16; j++) { current += activeChances[j]; if (r <= current) { bin = j; break; } } 
             let payout = bet * plMults[bin]; totalPayout += payout; 
             results.push({ bin: bin, multiplier: plMults[bin], payout: payout }); 
         }
