@@ -24,6 +24,7 @@ let onlineCount = 0;
 let chatHistory = [];
 
 io.on('connection', (socket) => {
+    // 💬 LOBBY SYSTEM
     onlineCount++;
     io.emit('onlineUpdate', onlineCount); 
     socket.emit('chatHistory', chatHistory); 
@@ -35,31 +36,43 @@ io.on('connection', (socket) => {
         io.emit('newChatMessage', msgObj); 
     });
 
-    socket.on('joinRoom', (data) => {
-        const roomName = data.roomName;
-        socket.join(roomName);
-        if (!rooms[roomName]) rooms[roomName] = { host: socket.id, state: 'waiting', players: {} };
-        rooms[roomName].players[socket.id] = { name: data.playerName, id: socket.id };
-        
-        // 🌟 แก้ตรงนี้: ส่งข้อมูลห้องและรายชื่อให้ทุกคนในห้องเสมอ ไม่ว่าจะกำลังรอหรือเล่นอยู่ 🌟
-        io.to(roomName).emit('roomUpdated', { 
-            host: rooms[roomName].host, 
-            players: Object.values(rooms[roomName].players),
-            state: rooms[roomName].state // ส่งสถานะไปด้วย ('waiting' หรือ 'playing')
-        });
-    });
-    
-    // 🌐 ระบบดึงรายชื่อห้องที่กำลังเปิดอยู่
+    // ==========================================
+    // 🧟 ZOMBIE DEFENSE (เพิ่มครบแล้ว 100%)
+    // ==========================================
     socket.on('requestRooms', () => {
         let activeRooms = [];
         for(let r in rooms) {
-            // ไม่ดึงห้องที่คนเล่นโหมด SOLO
             if(!r.startsWith('SOLO_') && (rooms[r].state === 'waiting' || rooms[r].state === 'playing')) {
                 activeRooms.push({ name: r, players: Object.keys(rooms[r].players).length });
             }
         }
         socket.emit('activeRoomsList', activeRooms);
     });
+
+    socket.on('joinRoom', (data) => {
+        const roomName = data.roomName;
+        socket.join(roomName);
+        if (!rooms[roomName]) rooms[roomName] = { host: socket.id, state: 'waiting', players: {} };
+        rooms[roomName].players[socket.id] = { name: data.playerName, id: socket.id };
+        
+        io.to(roomName).emit('roomUpdated', { 
+            host: rooms[roomName].host, 
+            players: Object.values(rooms[roomName].players),
+            state: rooms[roomName].state 
+        });
+    });
+
+    socket.on('startGame', (roomName) => { 
+        if (rooms[roomName] && rooms[roomName].host === socket.id) { 
+            rooms[roomName].state = 'playing'; 
+            io.to(roomName).emit('gameStarted', { host: rooms[roomName].host }); 
+        } 
+    });
+
+    socket.on('updatePlayer', (data) => { if (rooms[data.room] && rooms[data.room].state === 'playing') socket.to(data.room).emit('updateOthers', { id: socket.id, ...data }); });
+    socket.on('syncZombies', (data) => { if (rooms[data.room] && rooms[data.room].host === socket.id) socket.to(data.room).emit('syncZombies', { zombies: data.zombies, enemyBullets: data.enemyBullets, hazards: data.hazards }); });
+    socket.on('damageZombie', (data) => { if (rooms[data.room]) io.to(rooms[data.room].host).emit('zombieDamaged', data); });
+
 
     // ==========================================
     // 🀄 MAHJONG: Anti-Win System
@@ -116,7 +129,6 @@ io.on('connection', (socket) => {
                         for(let i=0; i<numSyms; i++) { currentGrid[c][rows[i]].sym = winSym; currentGrid[c][rows[i]].wild = false; }
                     }
                 } else if (!isWin) {
-                    // 🔥 ANTI-WIN SYSTEM: ถ้าเซิร์ฟสั่งแพ้ จะสกัดการเรียงกันที่คอลัมน์ 3 (Index 2) ทิ้งทั้งหมด!
                     let col0 = currentGrid[0].map(c => c.sym);
                     let col1 = currentGrid[1].map(c => c.sym);
                     let common = col0.filter(s => col1.includes(s) && s !== '🧧');
@@ -225,7 +237,6 @@ io.on('connection', (socket) => {
             let len = Math.floor(Math.random() * 3) + 3; 
             for (let c=0; c<len; c++) reels[c][0] = winSym;
         } else {
-            // 🔥 ANTI-WIN SYSTEM: ทำลายคอมโบธรรมชาติ
             let col0 = reels[0];
             let col1 = reels[1];
             let common = col0.filter(s => col1.includes(s) && s !== 'sc');
@@ -249,7 +260,7 @@ io.on('connection', (socket) => {
     });
 
     // ==========================================
-    // 🟢 PLINKO: Multiplier Scaling 
+    // 🟢 PLINKO
     // ==========================================
     socket.on('dropPlinko', (data) => {
         let count = data.count; let bet = data.bet; 
