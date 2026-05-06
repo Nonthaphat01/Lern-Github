@@ -68,7 +68,7 @@ io.on('connection', (socket) => {
             io.to(roomName).emit('gameStarted', { host: rooms[roomName].host }); 
         } 
     });
-
+    socket.to(data.room).emit('syncMap', data.bunkers);
     socket.on('updatePlayer', (data) => { if (rooms[data.room] && rooms[data.room].state === 'playing') socket.to(data.room).emit('updateOthers', { id: socket.id, ...data }); });
     socket.on('syncZombies', (data) => { if (rooms[data.room] && rooms[data.room].host === socket.id) socket.to(data.room).emit('syncZombies', { zombies: data.zombies, enemyBullets: data.enemyBullets, hazards: data.hazards }); });
     socket.on('damageZombie', (data) => { if (rooms[data.room]) io.to(rooms[data.room].host).emit('zombieDamaged', data); });
